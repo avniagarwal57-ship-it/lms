@@ -1,0 +1,1171 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import {
+  User,
+  Course,
+  Enrollment,
+  Achievement,
+  DailyChallenge,
+  LearningPath,
+  Note,
+  Submission,
+  SystemStats,
+  LeaderboardEntry,
+  Quiz,
+  FlashcardDeck,
+} from '../types';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const DATA_DIR = process.env.VERCEL ? path.join('/tmp', 'questlearn-data') : path.resolve(__dirname, '../../data');
+const DB_FILE = path.join(DATA_DIR, 'db.json');
+
+export interface DatabaseSchema {
+  users: User[];
+  courses: Course[];
+  quizzes: Quiz[];
+  flashcardDecks: FlashcardDeck[];
+  enrollments: Enrollment[];
+  achievements: Achievement[];
+  dailyChallenges: DailyChallenge[];
+  learningPaths: LearningPath[];
+  notes: Note[];
+  submissions: Submission[];
+  leaderboard: LeaderboardEntry[];
+  settings: {
+    geminiApiKey?: string;
+    maintenanceMode: boolean;
+    allowRegistration: boolean;
+  };
+}
+
+const DEFAULT_USERS: User[] = [
+  {
+    id: 'user-learner-1',
+    name: 'Alex Rivers',
+    email: 'alex@questlearn.dev',
+    role: 'learner',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
+    bio: 'Passionate developer transitioning into Autonomous AI Systems and Full-Stack Engineering.',
+    xp: 840,
+    level: 3,
+    streakDays: 6,
+    streakFreezes: 2,
+    lastActiveDate: new Date().toISOString().split('T')[0],
+    dailyGoalMinutes: 20,
+    dailyGoalMinutesCompleted: 15,
+    themePreference: 'dark',
+    soundEnabled: true,
+  },
+  {
+    id: 'user-instructor-1',
+    name: 'Dr. Sarah Chen',
+    email: 'sarah.chen@questlearn.dev',
+    role: 'instructor',
+    avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=250&q=80',
+    bio: 'Staff AI Researcher & Former Stanford Lecturer. Creator of top-rated Deep Learning curricula.',
+    xp: 4200,
+    level: 8,
+    streakDays: 24,
+    streakFreezes: 5,
+    lastActiveDate: new Date().toISOString().split('T')[0],
+    dailyGoalMinutes: 30,
+    dailyGoalMinutesCompleted: 30,
+    themePreference: 'dark',
+    soundEnabled: true,
+  },
+  {
+    id: 'user-admin-1',
+    name: 'Marcus Vance',
+    email: 'admin@questlearn.dev',
+    role: 'admin',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=250&q=80',
+    bio: 'QuestLearn Platform Administrator & Chief Learning Architect.',
+    xp: 9999,
+    level: 10,
+    streakDays: 45,
+    streakFreezes: 10,
+    lastActiveDate: new Date().toISOString().split('T')[0],
+    dailyGoalMinutes: 45,
+    dailyGoalMinutesCompleted: 45,
+    themePreference: 'dark',
+    soundEnabled: true,
+  },
+];
+
+const DEFAULT_QUIZZES: Quiz[] = [
+  {
+    id: 'quiz-ai-1',
+    lessonId: 'lesson-ai-3',
+    title: 'Check Your Knowledge: LLM Fundamentals & Embeddings',
+    passingScore: 70,
+    questions: [
+      {
+        id: 'q1',
+        quizId: 'quiz-ai-1',
+        questionText: 'What is the primary function of a vector embedding in modern AI systems?',
+        options: [
+          'To compress video files for faster streaming',
+          'To convert text, images, or audio into dense mathematical vectors capturing semantic meaning',
+          'To encrypt user passwords using symmetric hashing algorithms',
+          'To store relational tables in SQL format'
+        ],
+        correctOptionIndex: 1,
+        explanation: 'Embeddings map high-dimensional semantic relationships into vector space, allowing similar concepts to cluster together.',
+        hint: 'Think about how search engines find synonyms without exact word matches.'
+      },
+      {
+        id: 'q2',
+        quizId: 'quiz-ai-1',
+        questionText: 'Which similarity metric is most commonly used for measuring similarity between normalized vector embeddings?',
+        options: [
+          'Cosine Similarity',
+          'Levenshtein Distance',
+          'MD5 Checksum Comparison',
+          'Binary XOR Distance'
+        ],
+        correctOptionIndex: 0,
+        explanation: 'Cosine similarity measures the cosine of the angle between two vectors, ranging from -1 to 1, regardless of vector magnitude.',
+        hint: 'It measures the angle between vectors.'
+      },
+      {
+        id: 'q3',
+        quizId: 'quiz-ai-1',
+        questionText: 'In Retrieval-Augmented Generation (RAG), what is the role of the Retrieval step?',
+        options: [
+          'Fine-tuning the LLM weights permanently on disk',
+          'Fetching relevant domain chunks from a vector database and injecting them into the prompt context',
+          'Generating the final synthesized response directly to the user',
+          'Compressing tokens into a zip archive'
+        ],
+        correctOptionIndex: 1,
+        explanation: 'Retrieval queries your knowledge base for relevant chunks and injects them into the context window, grounding the LLM.',
+        hint: 'It fetches context before the LLM generates the answer.'
+      }
+    ]
+  },
+  {
+    id: 'quiz-ux-1',
+    lessonId: 'lesson-ux-3',
+    title: 'Design Systems & Accessibility Checkpoint',
+    passingScore: 75,
+    questions: [
+      {
+        id: 'qux1',
+        quizId: 'quiz-ux-1',
+        questionText: 'According to WCAG 2.1 AA guidelines, what is the minimum contrast ratio required for normal body text against its background?',
+        options: [
+          '3:1',
+          '4.5:1',
+          '7:1',
+          '2.5:1'
+        ],
+        correctOptionIndex: 1,
+        explanation: 'WCAG AA requires at least 4.5:1 for standard body text (below 18pt) and 3:1 for large text (18pt+ or 14pt bold).',
+        hint: 'Four and a half to one.'
+      },
+      {
+        id: 'qux2',
+        quizId: 'quiz-ux-1',
+        questionText: 'What is a "Design Token" in modern UI engineering?',
+        options: [
+          'A cryptocurrency used to buy Figma plugins',
+          'An atomic visual design decision stored as reusable data (e.g., color, spacing, typography)',
+          'An authentication JWT token stored in browser cookies',
+          'A visual watermark placed on wireframes'
+        ],
+        correctOptionIndex: 1,
+        explanation: 'Design tokens are platform-agnostic variables representing foundational styling choices across web, iOS, and Android.',
+        hint: 'It stores values like colors, font-sizes, and border-radii.'
+      }
+    ]
+  }
+];
+
+const DEFAULT_FLASHCARDS: FlashcardDeck[] = [
+  {
+    id: 'deck-ai-1',
+    lessonId: 'lesson-ai-4',
+    title: 'Core AI & LLM Terminology',
+    cards: [
+      {
+        id: 'fc1',
+        front: 'What is Hallucination in Large Language Models?',
+        back: 'When an AI model generates factually incorrect, nonsensical, or fabricated information with high semantic confidence.',
+        tag: 'Reliability',
+        hint: 'It sounds confident but is factually wrong.'
+      },
+      {
+        id: 'fc2',
+        front: 'What is Zero-Shot Prompting?',
+        back: 'Providing a prompt to an AI model without giving any prior examples or demonstration pairs.',
+        tag: 'Prompt Engineering',
+        hint: 'No training examples in the prompt.'
+      },
+      {
+        id: 'fc3',
+        front: 'What is the ReAct Pattern in Autonomous Agents?',
+        back: 'A prompting framework combining "Reasoning" (Thought) and "Acting" (Tool execution) in an iterative loop to solve multi-step problems.',
+        tag: 'Agents',
+        hint: 'Reason + Act loop.'
+      },
+      {
+        id: 'fc4',
+        front: 'What is Quantization (e.g., INT8, FP4)?',
+        back: 'Reducing the numerical precision of model weights from 16/32-bit floats to smaller bit representations to save VRAM and speed up inference.',
+        tag: 'Optimization',
+        hint: 'Low-bit representations.'
+      }
+    ]
+  }
+];
+
+const DEFAULT_COURSES: Course[] = [
+  {
+    id: 'course-ai-agentic',
+    title: 'Full-Stack AI Engineering: From RAG to Autonomous Agents',
+    slug: 'full-stack-ai-engineering',
+    shortDescription: 'Master modern AI architectures: vector search, hybrid retrieval, agent tool-calling, and production deployment.',
+    description: `Dive deep into the new wave of software engineering where LLMs act as reasoning engines. This hands-on course takes you from fundamental embedding mechanics and hybrid vector retrieval to crafting production-grade multi-agent swarms that execute complex tasks autonomously.
+
+Through interactive lessons, live code exercises, quizzes, and project assignments, you will understand how to eliminate hallucinations, architect scalable RAG pipelines, and build resilient AI workflows.`,
+    category: 'AI & Machine Learning',
+    level: 'Intermediate',
+    instructorId: 'user-instructor-1',
+    instructorName: 'Dr. Sarah Chen',
+    instructorAvatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=250&q=80',
+    instructorTitle: 'Staff AI Researcher & Stanford Fellow',
+    durationMinutes: 180,
+    rating: 4.9,
+    reviewsCount: 342,
+    enrollmentsCount: 1420,
+    thumbnail: 'https://images.unsplash.com/photo-1677442136019-21780efad99a?auto=format&fit=crop&w=1200&q=80',
+    tags: ['Artificial Intelligence', 'LLM', 'Vector DB', 'RAG', 'Agents', 'Python', 'TypeScript'],
+    learningOutcomes: [
+      'Understand transformer embeddings, chunking strategies, and vector distance metrics',
+      'Build resilient RAG pipelines with hybrid keyword and semantic retrieval',
+      'Design autonomous agents using the ReAct loop and function/tool calling',
+      'Deploy low-latency AI backends with streaming responses and guardrails'
+    ],
+    prerequisites: ['Basic JavaScript or Python knowledge', 'Understanding of REST APIs'],
+    published: true,
+    featured: true,
+    chapters: [
+      {
+        id: 'ch-ai-1',
+        courseId: 'course-ai-agentic',
+        title: 'Chapter 1: Foundations of Modern AI Systems',
+        order: 1,
+        lessons: [
+          {
+            id: 'lesson-ai-1',
+            chapterId: 'ch-ai-1',
+            title: 'Welcome & Anatomy of Modern LLMs',
+            order: 1,
+            type: 'video',
+            durationMinutes: 12,
+            xpReward: 25,
+            videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+            transcript: `Welcome to Full-Stack AI Engineering! In this foundational lesson, we break down how modern autoregressive Transformers work. We explore the attention mechanism, tokenization nuances, context windows, and why treating LLMs as probabilistic token prediction engines is essential for robust engineering. Let's look at how vectors map semantic thoughts into high-dimensional geometries.`,
+            markdownContent: `### Key Takeaways
+- **Transformers** process entire sequences simultaneously using self-attention.
+- **Tokens** are sub-word units (~0.75 words per token in English).
+- **Temperature** controls randomness: lower values (0.0 - 0.3) provide deterministic answers, higher values (0.7+) promote creativity.`,
+            resources: [
+              { id: 'r1', title: 'Transformer Architecture Cheatsheet', type: 'pdf', url: '#', size: '2.4 MB' },
+              { id: 'r2', title: 'Starter Code Repository', type: 'code', url: '#', size: '150 KB' }
+            ]
+          },
+          {
+            id: 'lesson-ai-2',
+            chapterId: 'ch-ai-1',
+            title: 'Vector Databases, Hybrid Search & RAG Architecture',
+            order: 2,
+            type: 'text',
+            durationMinutes: 18,
+            xpReward: 30,
+            markdownContent: `# Vector Databases & Hybrid Retrieval
+
+When scaling LLM applications to private company datasets, we face two fundamental constraints:
+1. **Context Window Limits**: Even with 1M+ token windows, dumping an entire knowledge base is slow and expensive.
+2. **Knowledge Recency**: Pre-trained models cannot know your internal data without grounding.
+
+### The Retrieval-Augmented Generation (RAG) Architecture
+
+\`\`\`
+[User Query] ──> [Embedding Model] ──> [Query Vector]
+                                            │
+                                            ▼
+[Document Chunks] ──> [Vector DB] ──> [Top-K Nearest Neighbors]
+                                            │
+                                            ▼
+                    [Prompt Context: Chunks + Query] ──> [LLM Synthesis]
+\`\`\`
+
+### Why Hybrid Search Outperforms Pure Vector Search
+Pure dense vector search excels at conceptual matching ("how to reset credentials" matches "password recovery"). However, it struggles with:
+- Exact part numbers or UUIDs (\`TX-90210\`)
+- Specific product codes and acronyms
+
+**Hybrid Search** combines **BM25 (Sparse Keyword Search)** with **HNSW (Dense Vector Search)** using **Reciprocal Rank Fusion (RRF)**:
+
+\`\`\`typescript
+// Reciprocal Rank Fusion Formula
+function calculateRRF(sparseRank: number, denseRank: number, k = 60): number {
+  return (1 / (k + sparseRank)) + (1 / (k + denseRank));
+}
+\`\`\`
+
+### Summary Checklist
+- [x] Chunk documents with sliding windows (20% overlap).
+- [x] Use normalized embeddings for cosine distance.
+- [x] Filter metadata before ranking.`,
+            resources: [
+              { id: 'r3', title: 'Vector Search Benchmarking Guide', type: 'slides', url: '#' }
+            ]
+          },
+          {
+            id: 'lesson-ai-3',
+            chapterId: 'ch-ai-1',
+            title: 'Interactive Knowledge Check: LLM & Vector Mastery',
+            order: 3,
+            type: 'quiz',
+            durationMinutes: 10,
+            xpReward: 40,
+            quizId: 'quiz-ai-1'
+          },
+          {
+            id: 'lesson-ai-4',
+            chapterId: 'ch-ai-1',
+            title: 'Flashcard Challenge: Core Terminology Drill',
+            order: 4,
+            type: 'flashcards',
+            durationMinutes: 8,
+            xpReward: 35,
+            flashcardDeckId: 'deck-ai-1'
+          }
+        ]
+      },
+      {
+        id: 'ch-ai-2',
+        courseId: 'course-ai-agentic',
+        title: 'Chapter 2: Building Autonomous Multi-Agent Workflows',
+        order: 2,
+        lessons: [
+          {
+            id: 'lesson-ai-5',
+            chapterId: 'ch-ai-2',
+            title: 'The ReAct Loop & Schema-Enforced Tool Calling',
+            order: 1,
+            type: 'text',
+            durationMinutes: 22,
+            xpReward: 30,
+            markdownContent: `# Autonomous Agents: The ReAct Pattern
+
+An autonomous agent differs from a simple chatbot by possessing **agency**: the ability to reason, choose external tools, inspect results, and self-correct until a goal is satisfied.
+
+### The ReAct Cycle
+
+1. **Thought**: The model plans its next action based on the current state.
+2. **Action**: The model outputs a structured tool invocation (e.g., \`search_database({ query: "..." })\`).
+3. **Observation**: The runtime executes the tool and injects the raw result back into the prompt.
+4. **Repeat**: The loop continues until the agent produces a final answer.
+
+\`\`\`typescript
+interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  execute: (args: any) => Promise<any>;
+}
+\`\`\`
+
+In production, agents should always implement max-step limits and strict schemas to prevent infinite loops.`
+          },
+          {
+            id: 'lesson-ai-6',
+            chapterId: 'ch-ai-2',
+            title: 'Hands-on Assignment: Build an Automated Research Agent',
+            order: 2,
+            type: 'assignment',
+            durationMinutes: 45,
+            xpReward: 100,
+            assignmentId: 'assign-ai-1',
+            markdownContent: `### Practical Assignment: Build an Agent Loop
+Implement a tool-calling dispatcher in TypeScript or Python that handles search, calculator, and memory recall. Submit your solution code and a short architectural explanation below.`
+          }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'course-design-systems',
+    title: 'Modern UI/UX Design Systems with Tailwind & Figma',
+    slug: 'modern-ui-ux-design-systems',
+    shortDescription: 'Build scalable, accessible, and delightful design systems used by modern high-growth tech companies.',
+    description: `Great software feels inevitable. In this course, you will learn the craft of modern interface design, typography hierarchy, tokenization, color psychology, and micro-interactions. You'll bridge the gap between Figma mockups and pixel-perfect Tailwind CSS code.`,
+    category: 'UI/UX Design',
+    level: 'Beginner',
+    instructorId: 'user-instructor-1',
+    instructorName: 'Elena Rostova',
+    instructorAvatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=250&q=80',
+    instructorTitle: 'Principal Design Technologist',
+    durationMinutes: 140,
+    rating: 4.95,
+    reviewsCount: 219,
+    enrollmentsCount: 980,
+    thumbnail: 'https://images.unsplash.com/photo-1507238691740-187a5b1d37b8?auto=format&fit=crop&w=1200&q=80',
+    tags: ['UI/UX', 'Design Systems', 'Tailwind CSS', 'Figma', 'Accessibility', 'Micro-interactions'],
+    learningOutcomes: [
+      'Define semantic design tokens for color, typography, elevation, and motion',
+      'Ensure WCAG 2.1 AA accessibility compliance across all components',
+      'Create buttery micro-interactions with CSS transitions and Web Animations API',
+      'Organize modular React component libraries with clear variants and states'
+    ],
+    prerequisites: ['Basic HTML & CSS familiarity'],
+    published: true,
+    featured: true,
+    chapters: [
+      {
+        id: 'ch-ux-1',
+        courseId: 'course-design-systems',
+        title: 'Chapter 1: Design Tokens & Visual Hierarchy',
+        order: 1,
+        lessons: [
+          {
+            id: 'lesson-ux-1',
+            chapterId: 'ch-ux-1',
+            title: 'The Art of Spatial Consistency & 8pt Grids',
+            order: 1,
+            type: 'video',
+            durationMinutes: 15,
+            xpReward: 25,
+            videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+            transcript: `Spacing is the rhythm of visual design. When spacing is arbitrary, interfaces feel amateur. By adhering to an 8-point base grid (4, 8, 12, 16, 24, 32, 48, 64px), every layout snaps into harmony effortlessly.`
+          },
+          {
+            id: 'lesson-ux-2',
+            chapterId: 'ch-ux-1',
+            title: 'Contrast, Accessible Dark Modes & Micro-Gradients',
+            order: 2,
+            type: 'text',
+            durationMinutes: 18,
+            xpReward: 30,
+            markdownContent: `# Designing Premium Dark Modes
+
+A true dark mode is never pure \`#000000\` on pure white text. 
+- High contrast black-and-white causes eye strain and halation.
+- Instead, use rich dark slates (\`#0b0f19\`, \`#131b2e\`).
+- Use elevation layers where elevated cards are slightly lighter (\`#1e293b\`) rather than darker.`
+          },
+          {
+            id: 'lesson-ux-3',
+            chapterId: 'ch-ux-1',
+            title: 'Quiz: Accessibility & Tokenization Heuristics',
+            order: 3,
+            type: 'quiz',
+            durationMinutes: 10,
+            xpReward: 40,
+            quizId: 'quiz-ux-1'
+          }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'course-fullstack-cloud',
+    title: 'Cloud-Native Full-Stack Architecture with Node & React',
+    slug: 'cloud-native-fullstack-architecture',
+    shortDescription: 'Architect robust distributed web applications with high concurrency, caching, and rock-solid state management.',
+    description: `Go beyond basic CRUD apps. Learn how modern tech leaders structure resilient full-stack systems with event sourcing, Redis caching, database indexing, and automated deployment pipelines.`,
+    category: 'Full-Stack Web Dev',
+    level: 'Advanced',
+    instructorId: 'user-instructor-1',
+    instructorName: 'Dr. Sarah Chen',
+    instructorAvatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=250&q=80',
+    instructorTitle: 'Staff AI Researcher & Stanford Fellow',
+    durationMinutes: 210,
+    rating: 4.88,
+    reviewsCount: 184,
+    enrollmentsCount: 860,
+    thumbnail: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=1200&q=80',
+    tags: ['React', 'Node.js', 'Distributed Systems', 'PostgreSQL', 'Docker', 'Redis'],
+    learningOutcomes: [
+      'Design idempotent REST and WebSocket APIs',
+      'Optimize database queries with B-tree indexes and query plan analysis',
+      'Implement distributed caching and session management with Redis',
+      'Set up zero-downtime CI/CD container deployments'
+    ],
+    prerequisites: ['Proficiency in TypeScript or JavaScript', 'Basic SQL familiarity'],
+    published: true,
+    featured: false,
+    chapters: [
+      {
+        id: 'ch-fs-1',
+        courseId: 'course-fullstack-cloud',
+        title: 'Chapter 1: Scalable Server Architectures',
+        order: 1,
+        lessons: [
+          {
+            id: 'lesson-fs-1',
+            chapterId: 'ch-fs-1',
+            title: 'Asynchronous Event Loops & Concurrency Patterns',
+            order: 1,
+            type: 'video',
+            durationMinutes: 18,
+            xpReward: 30,
+            videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+            transcript: `Node.js single-threaded event loop processes thousands of concurrent non-blocking I/O calls through libuv worker pools. Let's analyze how to prevent event-loop lag and manage memory leaks.`
+          }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'course-cyber-security',
+    title: 'Cybersecurity & Threat Defense for Modern Applications',
+    slug: 'cybersecurity-threat-defense',
+    shortDescription: 'Defend web apps against OWASP Top 10 vulnerabilities, zero-day attacks, and supply-chain compromises.',
+    description: `Security is not an afterthought. Learn ethical hacking fundamentals, JWT security pitfalls, SQL injection prevention, CORS hardening, and modern zero-trust enterprise architectures.`,
+    category: 'Cybersecurity',
+    level: 'Intermediate',
+    instructorId: 'user-instructor-1',
+    instructorName: 'Marcus Vance',
+    instructorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=250&q=80',
+    instructorTitle: 'Platform Security Director',
+    durationMinutes: 160,
+    rating: 4.92,
+    reviewsCount: 140,
+    enrollmentsCount: 650,
+    thumbnail: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=1200&q=80',
+    tags: ['Cybersecurity', 'Ethical Hacking', 'OWASP', 'Encryption', 'DevSecOps'],
+    learningOutcomes: [
+      'Mitigate OWASP Top 10 vulnerabilities in modern web applications',
+      'Implement secure authentication with MFA and cryptographic signatures',
+      'Audit dependencies and container images for known CVEs',
+      'Configure Content Security Policies (CSP) and CORS headers properly'
+    ],
+    prerequisites: ['Basic web development understanding'],
+    published: true,
+    featured: false,
+    chapters: [
+      {
+        id: 'ch-sec-1',
+        courseId: 'course-cyber-security',
+        title: 'Chapter 1: The Modern Threat Landscape',
+        order: 1,
+        lessons: [
+          {
+            id: 'lesson-sec-1',
+            chapterId: 'ch-sec-1',
+            title: 'Deconstructing Authentication Flaws & Session Hijacking',
+            order: 1,
+            type: 'video',
+            durationMinutes: 16,
+            xpReward: 25,
+            videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+            transcript: `Tokens in LocalStorage are vulnerable to Cross-Site Scripting (XSS). Learn why HttpOnly SameSite cookies provide superior defense and how to implement token rotation.`
+          }
+        ]
+      }
+    ]
+  }
+];
+
+const DEFAULT_ACHIEVEMENTS: Achievement[] = [
+  {
+    id: 'ach-first-step',
+    title: 'First Step',
+    description: 'Complete your first lesson on QuestLearn.',
+    icon: 'Sparkles',
+    xpReward: 50,
+    category: 'courses',
+    unlockedAt: '2026-10-28T10:00:00Z',
+    progress: 1,
+    maxProgress: 1
+  },
+  {
+    id: 'ach-streak-fire',
+    title: 'Flame Igniter',
+    description: 'Maintain a 5-day learning streak.',
+    icon: 'Flame',
+    xpReward: 100,
+    category: 'streak',
+    unlockedAt: '2026-11-02T14:30:00Z',
+    progress: 6,
+    maxProgress: 5
+  },
+  {
+    id: 'ach-quiz-master',
+    title: 'Quiz Prodigy',
+    description: 'Score 100% on any interactive assessment.',
+    icon: 'Award',
+    xpReward: 75,
+    category: 'quizzes',
+    unlockedAt: '2026-10-31T09:15:00Z',
+    progress: 1,
+    maxProgress: 1
+  },
+  {
+    id: 'ach-night-owl',
+    title: 'Night Owl',
+    description: 'Complete a study session after 9:00 PM.',
+    icon: 'Moon',
+    xpReward: 50,
+    category: 'special',
+    unlockedAt: '2026-11-01T21:40:00Z',
+    progress: 1,
+    maxProgress: 1
+  },
+  {
+    id: 'ach-flashcard-champ',
+    title: 'Memory Vault',
+    description: 'Review 20 flashcards with high recall rating.',
+    icon: 'Layers',
+    xpReward: 80,
+    category: 'special',
+    progress: 12,
+    maxProgress: 20
+  },
+  {
+    id: 'ach-xp-1000',
+    title: 'Kilowatt Learner',
+    description: 'Accumulate over 1,000 total XP.',
+    icon: 'Zap',
+    xpReward: 150,
+    category: 'xp',
+    progress: 840,
+    maxProgress: 1000
+  },
+  {
+    id: 'ach-streak-14',
+    title: 'Unstoppable Habit',
+    description: 'Reach a 14-day learning streak.',
+    icon: 'ShieldCheck',
+    xpReward: 250,
+    category: 'streak',
+    progress: 6,
+    maxProgress: 14
+  },
+  {
+    id: 'ach-polyglot',
+    title: 'Renaissance Mind',
+    description: 'Enroll in courses across 3 distinct learning domains.',
+    icon: 'Compass',
+    xpReward: 120,
+    category: 'courses',
+    progress: 2,
+    maxProgress: 3
+  }
+];
+
+const DEFAULT_CHALLENGES: DailyChallenge[] = [
+  {
+    id: 'ch-1',
+    title: 'Knowledge Builder',
+    description: 'Complete 2 lessons today',
+    xpReward: 40,
+    goal: 2,
+    current: 1,
+    completed: false,
+    claimed: false,
+    icon: 'BookOpen',
+    type: 'lessons'
+  },
+  {
+    id: 'ch-2',
+    title: 'Assessment Ace',
+    description: 'Score 80%+ on any quiz',
+    xpReward: 50,
+    goal: 1,
+    current: 1,
+    completed: true,
+    claimed: false,
+    icon: 'Award',
+    type: 'quiz'
+  },
+  {
+    id: 'ch-3',
+    title: 'Deep Focus',
+    description: 'Study for 20 minutes',
+    xpReward: 30,
+    goal: 20,
+    current: 15,
+    completed: false,
+    claimed: false,
+    icon: 'Clock',
+    type: 'minutes'
+  }
+];
+
+const DEFAULT_LEARNING_PATHS: LearningPath[] = [
+  {
+    id: 'path-ai-architect',
+    title: 'Next-Gen Autonomous AI Architect',
+    description: 'From modern LLM mechanics and vector search to production multi-agent systems and safety guardrails.',
+    category: 'Artificial Intelligence',
+    targetRole: 'Senior AI Engineer / AI Systems Architect',
+    coursesCount: 3,
+    durationHours: 18,
+    badgeIcon: 'Brain',
+    courseIds: ['course-ai-agentic', 'course-fullstack-cloud'],
+    skillsGained: ['Vector Retrieval (RAG)', 'Tool Calling Agents', 'Evaluation & Guardrails', 'Scalable Inference']
+  },
+  {
+    id: 'path-design-engineer',
+    title: 'Design Systems & Product Engineering',
+    description: 'Unify visual craft with front-end rigor. Master tokenization, accessibility, and micro-interactions.',
+    category: 'UI/UX & Frontend',
+    targetRole: 'Design Engineer / Staff UI Architect',
+    coursesCount: 2,
+    durationHours: 12,
+    badgeIcon: 'Palette',
+    courseIds: ['course-design-systems', 'course-fullstack-cloud'],
+    skillsGained: ['WCAG AA Standards', 'Design Tokens', 'Tailwind CSS', 'Component Architecture']
+  },
+  {
+    id: 'path-security-ops',
+    title: 'DevSecOps & Resilient Cloud Defense',
+    description: 'Protect applications, cloud infrastructure, and sensitive customer data against modern cyber threats.',
+    category: 'Cybersecurity',
+    targetRole: 'Application Security Engineer',
+    coursesCount: 2,
+    durationHours: 14,
+    badgeIcon: 'Shield',
+    courseIds: ['course-cyber-security', 'course-fullstack-cloud'],
+    skillsGained: ['OWASP Mitigation', 'Zero Trust Architecture', 'Secrets Management', 'Vulnerability Auditing']
+  }
+];
+
+const DEFAULT_ENROLLMENTS: Enrollment[] = [
+  {
+    id: 'enroll-alex-ai',
+    userId: 'user-learner-1',
+    courseId: 'course-ai-agentic',
+    enrolledAt: '2026-10-25T11:00:00Z',
+    progressPercentage: 45,
+    completedLessonIds: ['lesson-ai-1', 'lesson-ai-2'],
+    lastLessonId: 'lesson-ai-3',
+    lastAccessedAt: new Date().toISOString(),
+    certificateIssued: false
+  },
+  {
+    id: 'enroll-alex-ux',
+    userId: 'user-learner-1',
+    courseId: 'course-design-systems',
+    enrolledAt: '2026-10-29T16:00:00Z',
+    progressPercentage: 20,
+    completedLessonIds: ['lesson-ux-1'],
+    lastLessonId: 'lesson-ux-2',
+    lastAccessedAt: new Date(Date.now() - 86400000).toISOString(),
+    certificateIssued: false
+  }
+];
+
+const DEFAULT_LEADERBOARD: LeaderboardEntry[] = [
+  {
+    rank: 1,
+    userId: 'u-lead-1',
+    name: 'Elena Rostova',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+    xp: 1420,
+    streakDays: 19,
+    tier: 'Diamond'
+  },
+  {
+    rank: 2,
+    userId: 'u-lead-2',
+    name: 'Hiroshi Tanaka',
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80',
+    xp: 1250,
+    streakDays: 14,
+    tier: 'Diamond'
+  },
+  {
+    rank: 3,
+    userId: 'u-lead-3',
+    name: 'Maya Patel',
+    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80',
+    xp: 1090,
+    streakDays: 11,
+    tier: 'Diamond'
+  },
+  {
+    rank: 4,
+    userId: 'user-learner-1',
+    name: 'Alex Rivers',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
+    xp: 840,
+    streakDays: 6,
+    tier: 'Gold',
+    isCurrentUser: true
+  },
+  {
+    rank: 5,
+    userId: 'u-lead-4',
+    name: 'Liam O’Connor',
+    avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=150&q=80',
+    xp: 790,
+    streakDays: 5,
+    tier: 'Gold'
+  },
+  {
+    rank: 6,
+    userId: 'u-lead-5',
+    name: 'Zoe Martinez',
+    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
+    xp: 680,
+    streakDays: 4,
+    tier: 'Silver'
+  }
+];
+
+const DEFAULT_SUBMISSIONS: Submission[] = [
+  {
+    id: 'sub-1',
+    assignmentId: 'assign-ai-1',
+    lessonId: 'lesson-ai-6',
+    courseId: 'course-ai-agentic',
+    studentId: 'user-learner-1',
+    studentName: 'Alex Rivers',
+    studentAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
+    content: `// ReAct Agent Implementation with Tool Schema Dispatcher
+export class ResearchAgent {
+  private tools: Map<string, Function> = new Map();
+  
+  registerTool(name: string, fn: Function) {
+    this.tools.set(name, fn);
+  }
+
+  async runStep(thought: string, toolName: string, args: any) {
+    console.log('[Thought]:', thought);
+    const tool = this.tools.get(toolName);
+    if (!tool) throw new Error(\`Tool \${toolName} not found\`);
+    const observation = await tool(args);
+    return { thought, observation };
+  }
+}`,
+    submittedAt: '2026-11-02T18:00:00Z',
+    status: 'pending'
+  }
+];
+
+const DEFAULT_NOTES: Note[] = [
+  {
+    id: 'note-1',
+    userId: 'user-learner-1',
+    courseId: 'course-ai-agentic',
+    lessonId: 'lesson-ai-2',
+    lessonTitle: 'Vector Databases, Hybrid Search & RAG Architecture',
+    text: 'Reciprocal Rank Fusion (RRF) parameter k=60 balances out top ranks between keyword BM25 and vector embeddings without scale distortion.',
+    createdAt: '2026-11-02T15:20:00Z'
+  }
+];
+
+class Database {
+  private data: DatabaseSchema;
+
+  constructor() {
+    this.data = this.loadDatabase();
+  }
+
+  private loadDatabase(): DatabaseSchema {
+    try {
+      if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
+      if (fs.existsSync(DB_FILE)) {
+        const raw = fs.readFileSync(DB_FILE, 'utf-8');
+        return JSON.parse(raw);
+      }
+    } catch (err) {
+      console.warn('Could not read existing db.json, generating default seed data:', err);
+    }
+
+    const initialData: DatabaseSchema = {
+      users: DEFAULT_USERS,
+      courses: DEFAULT_COURSES,
+      quizzes: DEFAULT_QUIZZES,
+      flashcardDecks: DEFAULT_FLASHCARDS,
+      enrollments: DEFAULT_ENROLLMENTS,
+      achievements: DEFAULT_ACHIEVEMENTS,
+      dailyChallenges: DEFAULT_CHALLENGES,
+      learningPaths: DEFAULT_LEARNING_PATHS,
+      notes: DEFAULT_NOTES,
+      submissions: DEFAULT_SUBMISSIONS,
+      leaderboard: DEFAULT_LEADERBOARD,
+      settings: {
+        geminiApiKey: process.env.GEMINI_API_KEY || '',
+        maintenanceMode: false,
+        allowRegistration: true
+      }
+    };
+    this.saveDataDirect(initialData);
+    return initialData;
+  }
+
+  private saveDataDirect(data: DatabaseSchema) {
+    try {
+      if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
+      fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (err) {
+      console.error('Failed to write db.json:', err);
+    }
+  }
+
+  public save() {
+    this.saveDataDirect(this.data);
+  }
+
+  public getData(): DatabaseSchema {
+    return this.data;
+  }
+
+  // Users
+  public getUsers() { return this.data.users; }
+  public getUserById(id: string) { return this.data.users.find(u => u.id === id); }
+  public getUserByEmail(email: string) { return this.data.users.find(u => u.email.toLowerCase() === email.toLowerCase()); }
+  public updateUser(id: string, updates: Partial<User>) {
+    const idx = this.data.users.findIndex(u => u.id === id);
+    if (idx !== -1) {
+      this.data.users[idx] = { ...this.data.users[idx], ...updates };
+      this.save();
+      return this.data.users[idx];
+    }
+    return null;
+  }
+
+  // Add XP and level logic
+  public addXp(userId: string, xpPoints: number): { user: User; leveledUp: boolean; newLevel: number } {
+    const user = this.getUserById(userId);
+    if (!user) throw new Error('User not found');
+    const oldLevel = user.level;
+    const newXp = user.xp + xpPoints;
+    // Level formula: level = Math.floor(newXp / 300) + 1
+    const newLevel = Math.max(1, Math.floor(newXp / 300) + 1);
+    const leveledUp = newLevel > oldLevel;
+
+    user.xp = newXp;
+    user.level = newLevel;
+
+    // Update leaderboard if user is on it
+    const lbIdx = this.data.leaderboard.findIndex(l => l.userId === userId);
+    if (lbIdx !== -1) {
+      this.data.leaderboard[lbIdx].xp = newXp;
+      this.data.leaderboard.sort((a, b) => b.xp - a.xp);
+      this.data.leaderboard.forEach((item, index) => { item.rank = index + 1; });
+    }
+
+    this.save();
+    return { user, leveledUp, newLevel };
+  }
+
+  // Courses
+  public getCourses() { return this.data.courses; }
+  public getCourseById(id: string) { return this.data.courses.find(c => c.id === id); }
+  public getCourseBySlug(slug: string) { return this.data.courses.find(c => c.slug === slug); }
+  public createCourse(course: Course) {
+    this.data.courses.unshift(course);
+    this.save();
+    return course;
+  }
+  public updateCourse(id: string, updates: Partial<Course>) {
+    const idx = this.data.courses.findIndex(c => c.id === id);
+    if (idx !== -1) {
+      this.data.courses[idx] = { ...this.data.courses[idx], ...updates };
+      this.save();
+      return this.data.courses[idx];
+    }
+    return null;
+  }
+
+  // Quizzes & Flashcards
+  public getQuizById(id: string) { return this.data.quizzes.find(q => q.id === id); }
+  public getFlashcardDeckById(id: string) { return this.data.flashcardDecks.find(d => d.id === id); }
+
+  // Enrollments & Progress
+  public getEnrollmentsByUser(userId: string) {
+    return this.data.enrollments.filter(e => e.userId === userId);
+  }
+  public getEnrollment(userId: string, courseId: string) {
+    return this.data.enrollments.find(e => e.userId === userId && e.courseId === courseId);
+  }
+  public enrollUser(userId: string, courseId: string): Enrollment {
+    let enrollment = this.getEnrollment(userId, courseId);
+    if (!enrollment) {
+      enrollment = {
+        id: `enroll-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        userId,
+        courseId,
+        enrolledAt: new Date().toISOString(),
+        progressPercentage: 0,
+        completedLessonIds: [],
+        lastAccessedAt: new Date().toISOString(),
+        certificateIssued: false
+      };
+      this.data.enrollments.push(enrollment);
+      // Increment course enrollments count
+      const course = this.getCourseById(courseId);
+      if (course) {
+        course.enrollmentsCount = (course.enrollmentsCount || 0) + 1;
+      }
+      this.save();
+    }
+    return enrollment;
+  }
+  public markLessonComplete(userId: string, courseId: string, lessonId: string) {
+    let enrollment = this.getEnrollment(userId, courseId);
+    if (!enrollment) {
+      enrollment = this.enrollUser(userId, courseId);
+    }
+    if (!enrollment.completedLessonIds.includes(lessonId)) {
+      enrollment.completedLessonIds.push(lessonId);
+    }
+    enrollment.lastLessonId = lessonId;
+    enrollment.lastAccessedAt = new Date().toISOString();
+
+    // Calculate percentage
+    const course = this.getCourseById(courseId);
+    if (course) {
+      const totalLessons = course.chapters.reduce((acc, ch) => acc + ch.lessons.length, 0);
+      enrollment.progressPercentage = totalLessons > 0 
+        ? Math.round((enrollment.completedLessonIds.length / totalLessons) * 100) 
+        : 100;
+      if (enrollment.progressPercentage >= 100) {
+        enrollment.certificateIssued = true;
+      }
+    }
+
+    // Update Daily Challenge progress if lesson challenge exists
+    const lessonChallenge = this.data.dailyChallenges.find(c => c.type === 'lessons');
+    if (lessonChallenge && !lessonChallenge.completed) {
+      lessonChallenge.current = Math.min(lessonChallenge.goal, lessonChallenge.current + 1);
+      if (lessonChallenge.current >= lessonChallenge.goal) {
+        lessonChallenge.completed = true;
+      }
+    }
+
+    this.save();
+    return enrollment;
+  }
+
+  // Achievements
+  public getAchievements() { return this.data.achievements; }
+  public unlockAchievement(achievementId: string) {
+    const ach = this.data.achievements.find(a => a.id === achievementId);
+    if (ach && !ach.unlockedAt) {
+      ach.unlockedAt = new Date().toISOString();
+      ach.progress = ach.maxProgress || 1;
+      this.save();
+      return ach;
+    }
+    return null;
+  }
+
+  // Daily Challenges
+  public getDailyChallenges() { return this.data.dailyChallenges; }
+  public claimChallenge(id: string, userId: string) {
+    const challenge = this.data.dailyChallenges.find(c => c.id === id);
+    if (challenge && challenge.completed && !challenge.claimed) {
+      challenge.claimed = true;
+      const result = this.addXp(userId, challenge.xpReward);
+      this.save();
+      return { challenge, xpAdded: challenge.xpReward, user: result.user };
+    }
+    return null;
+  }
+
+  // Learning Paths
+  public getLearningPaths() { return this.data.learningPaths; }
+
+  // Notes
+  public getNotes(userId: string, courseId?: string) {
+    return this.data.notes.filter(n => n.userId === userId && (!courseId || n.courseId === courseId));
+  }
+  public addNote(userId: string, courseId: string, lessonId: string, lessonTitle: string, text: string) {
+    const note: Note = {
+      id: `note-${Date.now()}`,
+      userId,
+      courseId,
+      lessonId,
+      lessonTitle,
+      text,
+      createdAt: new Date().toISOString()
+    };
+    this.data.notes.unshift(note);
+    this.save();
+    return note;
+  }
+  public deleteNote(id: string, userId: string) {
+    const idx = this.data.notes.findIndex(n => n.id === id && n.userId === userId);
+    if (idx !== -1) {
+      this.data.notes.splice(idx, 1);
+      this.save();
+      return true;
+    }
+    return false;
+  }
+
+  // Submissions
+  public getSubmissions() { return this.data.submissions; }
+  public submitAssignment(submission: Omit<Submission, 'id' | 'submittedAt' | 'status'>) {
+    const newSub: Submission = {
+      ...submission,
+      id: `sub-${Date.now()}`,
+      submittedAt: new Date().toISOString(),
+      status: 'pending'
+    };
+    this.data.submissions.unshift(newSub);
+    this.save();
+    return newSub;
+  }
+  public gradeSubmission(id: string, score: number, feedback: string, gradedBy: string) {
+    const sub = this.data.submissions.find(s => s.id === id);
+    if (sub) {
+      sub.status = 'graded';
+      sub.score = score;
+      sub.feedback = feedback;
+      sub.gradedBy = gradedBy;
+      this.save();
+      return sub;
+    }
+    return null;
+  }
+
+  // Leaderboard
+  public getLeaderboard() { return this.data.leaderboard; }
+
+  // System Stats
+  public getSystemStats(): SystemStats {
+    const totalUsers = this.data.users.length;
+    const totalCourses = this.data.courses.length;
+    const totalEnrollments = this.data.enrollments.length;
+    const completedEnrollments = this.data.enrollments.filter(e => e.progressPercentage >= 100).length;
+    const platformCompletionRate = totalEnrollments > 0 ? Math.round((completedEnrollments / totalEnrollments) * 100) : 0;
+    const totalXpAwarded = this.data.users.reduce((sum, u) => sum + u.xp, 0);
+
+    return {
+      totalUsers,
+      activeToday: Math.max(1, Math.round(totalUsers * 0.8)),
+      totalCourses,
+      totalEnrollments,
+      platformCompletionRate,
+      totalXpAwarded,
+      weeklyActivity: [
+        { day: 'Mon', hours: 1.8, xp: 120 },
+        { day: 'Tue', hours: 2.4, xp: 180 },
+        { day: 'Wed', hours: 1.2, xp: 90 },
+        { day: 'Thu', hours: 3.1, xp: 240 },
+        { day: 'Fri', hours: 2.0, xp: 150 },
+        { day: 'Sat', hours: 3.5, xp: 280 },
+        { day: 'Sun', hours: 2.8, xp: 220 }
+      ]
+    };
+  }
+}
+
+export const db = new Database();
